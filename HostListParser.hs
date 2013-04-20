@@ -100,7 +100,7 @@ domains = validDomain `sepBy1` op ","
 record :: Parser Record
 record = do optional space
             pos <- getPosition
-            os  <- recordOptions <* notFollowedBy validRecordType
+            os  <- recordOptions
             t   <- field
             ds  <- domains
             return $ Record pos t ds os
