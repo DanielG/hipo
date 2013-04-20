@@ -2,6 +2,7 @@
 {-# LANGUAGE CPP, FlexibleContexts, MultiParamTypeClasses #-}
 module HostListParser where
 
+import Data.Char (isUpper)
 import Data.Default
 import Data.List
 import Data.IP
@@ -118,9 +119,13 @@ recordOptions :: Parser [(String, String)]
 recordOptions = many recordOption
 
 recordOption :: Parser (String, String)
-recordOption =     ((,) "num"  <$> try (field `isValid` num))
-               <|> ((,) "host" <$> validDomainLabel)
-               <|> fail "invalid record option"
+recordOption =
+      ((,) "num"  <$> try (field `isValid` num))
+  <|> ((,) "host" <$> try (validDomainLabel `suchThat` all (not.isUpper)))
+  <|> fail "invalid record option"
+
+suchThat :: MonadPlus m => m a -> (a -> Bool) -> m a; infix 9 `suchThat`
+suchThat m p = do x <- m; guard (p x); return x
 
 num :: Tokenizer String
 num = many1 digit
