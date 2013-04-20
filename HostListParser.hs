@@ -16,9 +16,13 @@ import Control.Applicative hiding (many, (<|>), optional)
 import Debug.Trace
 
 import Text.Parsec hiding (label, newline, space, State)
+import Text.Parsec.Pos
 
 import Types
 import HostListTokenizer
+
+twace l e = trace (concat ["DEBUG: ", l, " ", show e]) e
+
 
 data State = State {
       sDomain :: [String],
@@ -28,155 +32,160 @@ data State = State {
 instance Default State where
     def = State def def
 
-type Parser a = Parsec [(Token,SourcePos)] () a
+type Parser a = Parsec [TokenPos] () a
 
-#define TOK(c) token show snd (\(t,_) -> case t of c x -> Just x; _ -> Nothing)
-#define TOK_(c) token show snd (\(t,_) -> case t of c -> Just (); _ -> Nothing)
-
-op_     = TOK(Operator)
-num     = TOK(Number)
-field   = TOK(Field)
-indent_ = TOK(Indent)
-preambleEnd = TOK(PreambleEnd)
-comment = TOK(Comment)
-
-space   = TOK_(Space)
-newline = TOK_(Newline)
-
-
-indent = do i <- (optionMaybe indent_)
-            return $ fromMaybe 0 i
-
-op :: String -> Parser ()
-op o = do o' <- op_
-          guard (o == o')
-
-parser :: Parser ()
-parser = do op_; field; num; indent; newline; comment; preambleEnd; return ()
 
 hostListParser :: Parser [HostNet]
 hostListParser = do
-  p <- preamble
-  n <- many (decl 0)
-  eof
-  return n
+  optional $ try preamble
+  many newline
+  manySameIndent 0 decl <* eof
 
-preamble = anyToken `manyTill` preambleEnd
 
-decl i = (net i <|> host i)
+manySameIndent i p = many $ try (indentEq i >> p i)
 
-host :: Int -> Parser HostNet
+indentEq i = do i' <- indent
+                if (i == i')
+                   then return ()
+                   else fail $ "Indent should be equal to " ++ show i
+                            ++ " but is " ++ show i' ++ " really."
+
+
+preamble = anyToken `manyTill` (preambleEnd >> newline)
+
+decl i = (try (host i) <|> try (net i) <|> fail "no declaration found")
+
+host   :: Int -> Parser HostNet
 host i = do
+  pos <- getPosition
   ip <- validIp
-  d  <- validDomain
-  m  <- (optionMaybe validMac)
-  rs <- many record
+  ds <- domains
+  m <- (optionMaybe validMac)
   newline
-  return $ Host ip d m rs
+  rs <- many record
+
+  optional $ lookAhead $ checkHostIndent i
+
+  return $ Host pos ip ds m rs
+
+
+checkHostIndent i = do
+  i' <- indent
+  if i' > i
+    then fail "Hosts can't have subnets"
+    else return ()
 
 net i = do
+  pos <- getPosition
+  l  <- optionMaybe $ try label
   ip <- validIpNet
-  d <- (optionMaybe validDomain)
+  ds <- optionMaybe domains
   newline
+
+  optional $ lookAhead $ checkNetIndent i
   s <- manySameIndent (i+2) decl
-  return $ Net ip d s
+
+  return $ Net pos l ip ds s
+
+checkNetIndent i = do
+  i' <- indent
+  if (i' - i) > 2
+    then fail $ "Line should be indented " ++ show (i+2)
+             ++ " but is " ++ show i'
+    else return ()
 
 
 domains = validDomain `sepBy1` op ","
 
--- data Record = Record {
---       rType   :: String,
---       rDomain :: [String],
---       rOpts   :: [(String, String)]
---   } deriving (Eq, Show)
-
-
 record :: Parser Record
-record = do newline
-            optional space
-            liftM3 Record field domains recordOptions
+record = do optional space
+            pos <- getPosition
+            os  <- recordOptions <* notFollowedBy validRecordType
+            t   <- field
+            ds  <- domains
+            return $ Record pos t ds os
+            <* newline
 
 
 recordOptions :: Parser [(String, String)]
-recordOptions =     (return.(,) "num"  <$> field)
-                <|> (return.(,) "host" <$> validDomainLabel)
-                <|> return []
+recordOptions = many recordOption
 
+recordOption =     ((,) "num"  <$> try (field `isValid` num))
+               <|> ((,) "host" <$> validDomainLabel)
+               <|> fail "invalid record option"
 
+num :: Tokenizer String
+num = many1 digit
 
---liftM3 Net validIpNet  (return [])
+label = field <* op ":"
 
--- ^ `manySameIndent p' parses indent before p while the level is equal to `i'
-manySameIndent i p = many $ try (indentEq i >> p i)
-indentEq i = do i' <- indent; guard (i == i'); return i
+-- Parsers for verifying the content of a Field to be a certain type
 
--- parser :: Hl ()
--- parser = do
--- --  preamble
---   many1 (net <|> host)
+validIp          = field `isValid` ip          <?> "valid IP"
+validIpNet       = field `isValid` ipNet       <?> "valid IP/prefix"
+validMac         = field `isValid` mac         <?> "valid MAC"
+validDomain      = field `isValid` domain      <?> "valid Domain"
+validDomainLabel = field `isValid` domainLabel <?> "valid Domain Label"
 
--- net = undefined
+--isValid :: (Stream s Identity t, Stream s' Identity t', Default u)
+--        => Parsec s u s' -> Parsec s' u b -> Parsec s u b
+isValid parser verifyer = do
+  pos <- getPosition
+  let name = sourceName pos
+      line = sourceLine pos
+      col  = sourceColumn pos
+      npos = newPos name line col
 
--- host = undefined
+  f <- parser
 
+  case runP (-- setPosition npos >>
+                         verifyer <* eof) def "" f of
+    Left e -> fail $ "in " ++ (show f) ++ " is(In)Valid " ++ (show e)
+    Right r -> return r
 
---ip = do Field i <- field
---        let bleh = read i :: IP
+ipNet :: Tokenizer NetAddr
+ipNet = liftM2 NetAddr (try ip) prefix
 
---ipNet = do Field i <- field
-
---Parsec tok st a -> st -> SourceName -> [tok] -> Either ParseError a
--- Stream s Identity t =>
--- Parsec s u a -> u -> SourceName -> s -> Either ParseError a
-
-isValid :: (Stream s Identity t, Stream s' Identity t', Default u)
-        => Parsec s u s' -> Parsec s' u b -> Parsec s u b
-isValid p l = try $ do f <- p
-                       case runP l def "" f of
-                         Left e -> fail (show e)
-                         Right r -> return r
-
-validIp = field `isValid` ip
-validIpNet = field `isValid` ipNet
-validMac = field `isValid` mac
-validDomain = field `isValid` domain
-validDomainLabel = field `isValid` domainLabel
-
-
-ipNet :: Parsec String () NetAddr
-ipNet = liftM2 NetAddr ip prefix
-
-ip :: Parsec String () IP
+ip :: Tokenizer IP
 ip = do addr <- many1 (digit <|> char '.')
         case reads addr of
           ((i,_):_) -> return i
           [] -> fail "Not an IP"
 
-prefix = char '/' >> num'
+prefix = char '/' >> (read <$> many1 digit) <?> "prefix"
 
-mac :: Parsec String () String
-mac = do ps <- hexPair `sepBy1` (char ':')
+mac :: Tokenizer String
+mac = do ps <- count 2 hexDigit `sepBy1` (char ':')
          (guard $ (length ps) == 6) <?> "valid MAC address"
          return $ intercalate ":" ps
 
-hexPair = count 2 hexDigit
-
-num' = read <$> many1 digit
-
-
--- The Internet standards (Request for Comments) for protocols mandate that
--- component hostname labels may contain only the ASCII letters 'a' through 'z'
--- (in a case-insensitive manner), the digits '0' through '9', and the hyphen
--- ('-'). The original specification of hostnames in RFC 952, mandated that
--- labels could not start with a digit or with a hyphen, and must not end with a
--- hyphen. However, a subsequent specification (RFC 1123) permitted hostname
--- labels to start with digits. No other symbols, punctuation characters, or
--- white space are permitted.
-domainLabel :: Parsec String () String
+domainLabel :: Tokenizer String
 domainLabel = do a <- letter
                  as <- many (alphaNum <|> char '-')
                  return (a:as)
 
-domain :: Parsec String () String
+domain :: Tokenizer String
 domain =  intercalate "." <$> domainLabel `sepBy1` char '.'
+
+
+
+-- Low Level Token Parsers
+
+#define TOK1(cst) \
+  (\ t -> case tok t of cst x -> Just x ; _ -> Nothing)
+#define TOK0(cst) \
+  (\ t -> case tok t of cst   -> Just (); _ -> Nothing)
+
+token_ t = token (show.show.tok) pos t
+
+op_ = token_ TOK1(Operator)
+op o = do o' <- op_; guard (o == o')
+
+indent      = token_ TOK1(Indent) <?> "indentation"
+field       = token_ TOK1(Field)
+preambleEnd = token_ TOK1(PreambleEnd)
+space       = token_ TOK0(Space)
+newline_     = token_ TOK0(Newline)
+newline = newline_ <|> eof
+
 

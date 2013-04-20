@@ -10,10 +10,13 @@ import System.Environment
 
 main = do
   f <- getContents
-  putStrLn $ groom $ runParser tokenizer def "tok" f
-  case runParser tokenizer def "pars" f of
+  let res = runParser tokenizer def "stdin" f
+
+  putStrLn $ groom $ res
+
+  case res of
     Left e -> putStrLn $ show e
-    Right ts -> putStrLn $ groom $ runParser (indent >> net 0) def "stdin" ts
+    Right ts -> putStrLn $ groom $ runParser (hostListParser) def "stdin'" ts
 
 
 

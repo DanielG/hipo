@@ -1,9 +1,8 @@
 module HostListTokenizer(
-  Token(..), Tokenizer, tokenizer
+  Token(..), TokenPos(..), Tokenizer, tokenizer
   ) where
 
 import Data.List
-import Data.IP
 import Data.Maybe
 import Data.Functor
 
@@ -11,65 +10,60 @@ import Control.Monad
 import Control.Applicative hiding (many, (<|>), optional)
 
 import Text.Parsec hiding (label, space, State)
-import Text.Parsec.String
+
 
 import Types
 
 data Token = Operator String
            | Field String
-           | Number Int
            | Indent Int
            | Space
            | Newline
            | PreambleEnd String
-           | Comment String
            deriving (Eq, Show)
+
+data TokenPos = TokenPos { pos :: SourcePos, tok :: Token } deriving (Eq)
+
+instance Show TokenPos where
+    show x = show $ tok x
 
 type Tokenizer a = Parsec String () a
 
+injPos :: Tokenizer Token -> Tokenizer TokenPos
+injPos e = do liftM2 TokenPos getPosition e
 
-injPos :: Tokenizer a -> Tokenizer (a,SourcePos)
-injPos e = do p <- getPosition
-              a <- e
-              return $ (a,p)
-
-tokenizer :: Tokenizer [(Token, SourcePos)]
+tokenizer :: Tokenizer [TokenPos]
 tokenizer = do
   (choice (map (try.injPos) [
             Indent      <$> indent,
             Space       <$  space,
             Newline     <$  eol,
-            PreambleEnd <$>  preambleEnd,
-            Comment     <$> comment,
+            PreambleEnd <$> preambleEnd,
             Operator    <$> operator <* skipMany sp,
-            Field       <$> field    <* skipMany sp
---            Number      <$> number   <* skipMany sp
-           ])) `manyTill` eof
-
+            Field       <$> field    <* skipMany sp,
+            fail "unrecognized token"
+    ])) `manyTill` eof
 
 column = sourceColumn <$> getPosition
 
 column1 = do c <- column
              guard (c == 1)
 
+indent = column1 >> length <$> many sp <* string "- "
 
-indent = do length <$> space <* string "- "
-
-space = column1 >> many1 sp
+space = column1 >> many1 sp >> notFollowedBy comment
 
 sp = void $ char ' '
-eol = void $ many1 newline
+eol = void $ many1 (void newline <|> void (try comment))
+comment = skipMany sp >> char '#' >> anyChar `manyTill` newline
 
 preambleEnd = string "---" <* many (char '-')
 
 operator = return <$> oneOf ":,"
 
-field = many1 (alphaNum <|> oneOf ".-/" <|> try (char ':' <* notFollowedBy (char ' ')))
-
--- number = read <$> many1 digit
-
-comment :: Tokenizer String
-comment = char '#' >> anyChar `manyTill` (try newline)
+field = many1 $ choice [ alphaNum,
+                         oneOf ".-/",
+                         try (char ':' <* notFollowedBy (char ' ')) ]
 
 
--- parseRecord = RecordType <$> choice (map string ["A","MX","SRV","NS"])
+

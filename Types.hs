@@ -3,23 +3,29 @@ module Types where
 import Data.Default
 import Data.IP
 
+import Text.Parsec.Pos
+
 data Record = Record {
+      rPos     :: SourcePos,
       rType    :: String,
       rDomains :: [String],
       rOpts    :: [(String, String)]
   } deriving (Eq, Show)
 
-instance Default Record where
-    def = Record def def def
+--instance Default Record where
+--    def = Record (initialPos "") def def def
 
 data NetAddr = NetAddr { nIp :: IP, nPrefix :: Int } deriving (Eq,Show)
 
-data HostNet = Net { nAddr    :: NetAddr,
-                     nDomain  :: Maybe String,
+data HostNet = Net { nPos     :: SourcePos,
+                     nLabel   :: Maybe String,
+                     nAddr    :: NetAddr,
+                     nDomain  :: Maybe [String],
                      nSubNets :: [HostNet]
                    }
-             | Host { hAddr    :: IP,
-                      hDomain  :: String,
+             | Host { hPos     :: SourcePos,
+                      hAddr    :: IP,
+                      hDomain  :: [String],
                       hMAC     :: Maybe String,
                       hRecords :: [Record]
                     }
