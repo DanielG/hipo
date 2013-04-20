@@ -1,13 +1,11 @@
---import IpList
-
 import HostListTokenizer
 import HostListParser
 
 import Text.Parsec
 import Text.Groom
 import Data.Default
-import System.Environment
 
+main :: IO ()
 main = do
   f <- getContents
   let res = runParser tokenizer def "stdin" f

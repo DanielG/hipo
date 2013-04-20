@@ -1,12 +1,10 @@
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 {-# LANGUAGE CPP, FlexibleContexts, MultiParamTypeClasses #-}
 module HostListParser where
 
-import Data.Char hiding (Space)
-import Data.List
-import Data.Word
-import Data.IP
 import Data.Default
-import Data.Maybe
+import Data.List
+import Data.IP
 import Data.Functor
 
 import Control.Monad
@@ -16,11 +14,12 @@ import Control.Applicative hiding (many, (<|>), optional)
 import Debug.Trace
 
 import Text.Parsec hiding (label, newline, space, State)
-import Text.Parsec.Pos
 
-import Types
 import HostListTokenizer
 
+import Types
+
+twace :: Show a => [Char] -> a -> a
 twace l e = trace (concat ["DEBUG: ", l, " ", show e]) e
 
 
@@ -38,12 +37,14 @@ type Parser a = Parsec [TokenPos] () a
 hostListParser :: Parser [HostNet]
 hostListParser = do
   optional $ try preamble
-  many newline
+  void $ many newline
   manySameIndent 0 decl <* eof
 
 
+manySameIndent :: Int -> (Int -> Parser a) -> Parser [a]
 manySameIndent i p = many $ try (indentEq i >> p i)
 
+indentEq :: Int -> Parser ()
 indentEq i = do i' <- indent
                 if (i == i')
                    then return ()
@@ -51,8 +52,10 @@ indentEq i = do i' <- indent
                             ++ " but is " ++ show i' ++ " really."
 
 
+preamble :: Parser [TokenPos]
 preamble = anyToken `manyTill` (preambleEnd >> newline)
 
+decl :: Int -> Parser HostNet
 decl i = (try (host i) <|> try (net i) <|> fail "no declaration found")
 
 host   :: Int -> Parser HostNet
@@ -69,12 +72,14 @@ host i = do
   return $ Host pos ip ds m rs
 
 
+checkHostIndent :: Int -> Parser ()
 checkHostIndent i = do
   i' <- indent
   if i' > i
     then fail "Hosts can't have subnets"
     else return ()
 
+net :: Int -> Parser HostNet
 net i = do
   pos <- getPosition
   l  <- optionMaybe $ try label
@@ -87,6 +92,7 @@ net i = do
 
   return $ Net pos l ip ds s
 
+checkNetIndent :: Int -> Parser ()
 checkNetIndent i = do
   i' <- indent
   if (i' - i) > 2
@@ -95,6 +101,7 @@ checkNetIndent i = do
     else return ()
 
 
+domains :: Parser [String]
 domains = validDomain `sepBy1` op ","
 
 record :: Parser Record
@@ -110,6 +117,7 @@ record = do optional space
 recordOptions :: Parser [(String, String)]
 recordOptions = many recordOption
 
+recordOption :: Parser (String, String)
 recordOption =     ((,) "num"  <$> try (field `isValid` num))
                <|> ((,) "host" <$> validDomainLabel)
                <|> fail "invalid record option"
@@ -117,29 +125,30 @@ recordOption =     ((,) "num"  <$> try (field `isValid` num))
 num :: Tokenizer String
 num = many1 digit
 
+label :: Parser String
 label = field <* op ":"
 
 -- Parsers for verifying the content of a Field to be a certain type
 
+validIp :: Parser IP
 validIp          = field `isValid` ip          <?> "valid IP"
+validIpNet :: Parser NetAddr
 validIpNet       = field `isValid` ipNet       <?> "valid IP/prefix"
+validMac :: Parser String
 validMac         = field `isValid` mac         <?> "valid MAC"
+validDomain :: Parser String
 validDomain      = field `isValid` domain      <?> "valid Domain"
+validDomainLabel :: Parser String
 validDomainLabel = field `isValid` domainLabel <?> "valid Domain Label"
 
---isValid :: (Stream s Identity t, Stream s' Identity t', Default u)
---        => Parsec s u s' -> Parsec s' u b -> Parsec s u b
-isValid parser verifyer = do
-  pos <- getPosition
-  let name = sourceName pos
-      line = sourceLine pos
-      col  = sourceColumn pos
-      npos = newPos name line col
-
+isValid :: (Monad m, Show a, Show t, Stream a Identity t, Default u1)
+        => ParsecT s u m a -> ParsecT a u1 Identity b -> ParsecT s u m b
+isValid parser verifier = do
+  --pos <- getPosition
   f <- parser
 
   case runP (-- setPosition npos >>
-                         verifyer <* eof) def "" f of
+                         verifier <* eof) def "" f of
     Left e -> fail $ "in " ++ (show f) ++ " is(In)Valid " ++ (show e)
     Right r -> return r
 
@@ -152,6 +161,7 @@ ip = do addr <- many1 (digit <|> char '.')
           ((i,_):_) -> return i
           [] -> fail "Not an IP"
 
+prefix :: Parsec String u Int
 prefix = char '/' >> (read <$> many1 digit) <?> "prefix"
 
 mac :: Tokenizer String
@@ -176,14 +186,25 @@ domain =  intercalate "." <$> domainLabel `sepBy1` char '.'
 #define TOK0(cst) \
   (\ t -> case tok t of cst   -> Just (); _ -> Nothing)
 
+token_ :: Stream s Identity TokenPos => (TokenPos -> Maybe a) -> Parsec s u a
 token_ t = token (show.show.tok) pos t
 
+op_ :: Parser String
 op_ = token_ TOK1(Operator)
+
+op :: String -> Parser ()
 op o = do o' <- op_; guard (o == o')
 
+indent :: Parser Int
 indent      = token_ TOK1(Indent) <?> "indentation"
+
+field :: Parser String
 field       = token_ TOK1(Field)
+
+preambleEnd :: Parser String
 preambleEnd = token_ TOK1(PreambleEnd)
+
+space, newline, newline_ :: Parser ()
 space       = token_ TOK0(Space)
 newline_     = token_ TOK0(Newline)
 newline = newline_ <|> eof

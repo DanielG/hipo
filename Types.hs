@@ -1,6 +1,5 @@
 module Types where
 
-import Data.Default
 import Data.IP
 
 import Text.Parsec.Pos

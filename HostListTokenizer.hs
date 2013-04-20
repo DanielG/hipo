@@ -1,18 +1,14 @@
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module HostListTokenizer(
   Token(..), TokenPos(..), Tokenizer, tokenizer
   ) where
 
-import Data.List
-import Data.Maybe
 import Data.Functor
 
 import Control.Monad
 import Control.Applicative hiding (many, (<|>), optional)
 
 import Text.Parsec hiding (label, space, State)
-
-
-import Types
 
 data Token = Operator String
            | Field String
