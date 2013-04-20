@@ -1,0 +1,34 @@
+
+---
+- 10.10.0.0/16 example.net
+  - Datacenter: 10.10.1.0/24 servers
+    - 10.10.1.1 alpha
+    - 10.10.1.2 beta
+    - 10.10.1.3 gamma
+    - 10.10.1.4 delta
+
+  - HQ: 10.10.2.0/24 clients
+    - 10.10.2.1 epsilon
+    - 10.10.2.2 zeta
+    - 10.10.2.3 theta
+    - 10.10.2.4 lambda
+
+  - VNet: 10.10.3.0/24 vpn
+    - 10.10.3.1 sigma
+    - 10.10.3.2 omega
+
+- 0.0.0.0 example.com
+          A www1, www, mail, xmpp
+       50 MX mail
+  10 5269 SRV xmpp-server.tcp
+  10 5222 SRV xmpp-client.tcp
+        a NS servers.example.net, clients.example.net, vpn.example.net
+
+- 91.23.45.67 example.com
+              A www2, www, mail, xmpp
+           50 MX mail
+      10 5269 SRV xmpp-server.tcp
+      10 5222 SRV xmpp-client.tcp
+            b NS servers.example.net, clients.example.net, vpn.example.net
+
+
