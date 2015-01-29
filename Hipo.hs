@@ -1,28 +1,22 @@
-import HostListTokenizer
-import HostListParser
+import Data.List
 
-import Text.Parsec
+import System.Exit
+import System.Environment
+import System.Console.GetOpt
+
 import Text.Groom
-import Data.Default
+
+import Types
+import HostListParser
+import HostListTokenizer
+
+printer :: (Show a) => a -> IO ()
+printer = putStrLn . groom
 
 main :: IO ()
 main = do
   f <- getContents
-  let res = runParser tokenizer def "stdin" f
 
-  putStrLn $ groom $ res
-
-  case res of
-    Left e -> putStrLn $ show e
-    Right ts -> putStrLn $ groom $ runParser (hostListParser) def "stdin'" ts
-
-
-
---runParser :: GenParser tok st a -> st -> SourceName -> [tok] -> Either ParseError a
---main = do
---  f <- getContents
---  f <- readFile "/home/dxld/srv/IP-Allocation-Plan.txt"
---  print $ runParser ipList def "stdin" f
---  putStrLn $ groom $ runParser ipList def "stdin" f
-
-
+  print "tracing"
+  let Right t = tokenize ("") f
+  mapM_ (\e -> putStrLn $ show e ++ ","  ) t

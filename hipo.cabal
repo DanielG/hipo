@@ -17,11 +17,38 @@ cabal-version:       >=1.8
 
 executable hipo
   main-is:  Hipo.hs
-  other-modules: HostListTokenizer HostListParser Types
-  build-depends:       base    == 4.5.*,
+  build-depends:       base    == 4.*,
                        mtl     == 2.*,
                        data-default == 0.5.*,
                        parsec  == 3.1.*,
                        iproute == 1.2.*,
-                       groom
-  ghc-options: -Wall
+                       split   == 0.2.*,
+                       groom,
+                       cereal,
+                       bytestring
+
+executable hipo-tinydns
+  main-is:  TinyDNSGenerator.hs
+  build-depends:       base    == 4.*,
+                       mtl     == 2.*,
+                       data-default == 0.5.*,
+                       parsec  == 3.1.*,
+                       iproute == 1.2.*,
+                       groom,
+                       split   == 0.2.*,
+                       lens,
+                       cereal,
+                       bytestring
+
+executable hipo-leses
+  main-is:  LeasesGenerator.hs
+  build-depends:       base    == 4.*,
+                       mtl     == 2.*,
+                       data-default == 0.5.*,
+                       parsec  == 3.1.*,
+                       iproute == 1.2.*,
+                       groom,
+                       split   == 0.2.*,
+                       lens,
+                       cereal,
+                       bytestring

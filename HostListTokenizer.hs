@@ -1,12 +1,15 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module HostListTokenizer(
-  Token(..), TokenPos(..), Tokenizer, tokenizer
+  Token(..), TokenPos(..), Tokenizer, tokenize
   ) where
 
 import Data.Functor
 
 import Control.Monad
 import Control.Applicative hiding (many, (<|>), optional)
+
+import Data.Char (isSpace)
+import Data.Default
 
 import Text.Parsec hiding (label, space, State)
 
@@ -21,12 +24,16 @@ data Token = Operator String
 data TokenPos = TokenPos { pos :: SourcePos, tok :: Token } deriving (Eq)
 
 instance Show TokenPos where
-    show x = show $ tok x
+    show x = (show $ tok x) ++ " " ++ (show $ pos x)
 
 type Tokenizer a = Parsec String () a
 
 injPos :: Tokenizer Token -> Tokenizer TokenPos
 injPos e = do liftM2 TokenPos getPosition e
+
+
+tokenize :: String -> String -> Either ParseError [TokenPos]
+tokenize = runParser tokenizer def
 
 tokenizer :: Tokenizer [TokenPos]
 tokenizer = do
@@ -57,9 +64,9 @@ preambleEnd = string "---" <* many (char '-')
 
 operator = return <$> oneOf ":,"
 
-field = many1 $ choice [ alphaNum,
-                         oneOf ".-/",
-                         try (char ':' <* notFollowedBy (char ' ')) ]
+--field = many1 $ choice [ alphaNum,
+--                         oneOf ".-/",
+--                         try (char ':' <* notFollowedBy (char ' ')) ]
 
-
-
+field = many1 $ satisfy (\c -> (not $ isSpace c) && (not $ c `elem` ":,#"))
+             <|> try (char ':' <* notFollowedBy (char ' '))
